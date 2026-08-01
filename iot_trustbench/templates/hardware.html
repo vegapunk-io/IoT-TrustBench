@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% set active = "hardware" %}
+
+{% block title %}Hardware - IoT-TrustBench{% endblock %}
+{% block page_title %}Hardware Integration{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="margin-bottom:32px;">
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="bi bi-cpu" style="margin-right:8px;"></i>Connected Devices</h3>
+        </div>
+        <div class="card-body" id="devicesList">
+            <div class="empty-state" style="padding:20px;">
+                <p style="color:var(--text-muted);font-size:0.85rem;">Scanning for devices...</p>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="bi bi-info-circle" style="margin-right:8px;"></i>Setup Instructions</h3>
+        </div>
+        <div class="card-body">
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <div style="padding:12px 16px;background:var(--data-point-bg);border-radius:10px;border-left:3px solid var(--primary);">
+                    <strong style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--primary);">1. Flash ESP32</strong>
+                    <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-secondary);">Upload the .ino sketch from <code>hardware/esp32_sensor_node/</code></p>
+                </div>
+                <div style="padding:12px 16px;background:var(--data-point-bg);border-radius:10px;border-left:3px solid var(--success);">
+                    <strong style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--success);">2. Configure WiFi</strong>
+                    <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-secondary);">Edit SSID, password, and server IP in the sketch</p>
+                </div>
+                <div style="padding:12px 16px;background:var(--data-point-bg);border-radius:10px;border-left:3px solid var(--warning);">
+                    <strong style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--warning);">3. Wire Sensors</strong>
+                    <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-secondary);">Connect DHT22, MQ-2, PIR, Reed switch per wiring diagram</p>
+                </div>
+                <div style="padding:12px 16px;background:var(--data-point-bg);border-radius:10px;border-left:3px solid var(--info);">
+                    <strong style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--info);">4. Power On</strong>
+                    <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-secondary);">ESP32 connects to WiFi and starts sending data every 5 seconds</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:32px;">
+    <div class="card-header">
+        <h3><i class="bi bi-activity" style="margin-right:8px;"></i>Latest Reading</h3>
+        <button class="btn btn-outline" onclick="refreshData()" style="font-size:0.8rem;"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    </div>
+    <div class="card-body" id="latestReading">
+        <div class="empty-state" style="padding:40px;">
+            <div class="icon"><i class="bi bi-broadcast"></i></div>
+            <h3>Waiting for Hardware Data</h3>
+            <p>Power on your ESP32 sensor node. Data will appear here automatically.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3><i class="bi bi-clock-history" style="margin-right:8px;"></i>Recent Hardware Readings</h3>
+    </div>
+    <div class="card-body" style="padding:0;">
+        <div class="table-wrapper">
+            <table class="table" id="readingsTable">
+                <thead><tr><th>Time</th><th>Device</th><th>Temp</th><th>Humidity</th><th>Smoke</th><th>Gas</th><th>Motion</th><th>Door</th><th>Classification</th><th>Confidence</th></tr></thead>
+                <tbody>
+                    <tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:40px;">No hardware readings yet</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const classColors = {
+    normal:'success', emergency:'danger', sensor_fault:'warning',
+    spoofing:'secondary', offline:'secondary', uncertain:'info'
+};
+
+async function refreshData() {
+    await Promise.all([loadDevices(), loadLatest(), loadReadings()]);
+}
+
+async function loadDevices() {
+    try {
+        const resp = await fetch('/api/hardware/devices');
+        const data = await resp.json();
+        if (!data.devices.length) {
+            document.getElementById('devicesList').innerHTML =
+                '<div class="empty-state" style="padding:20px;">' +
+                '<div class="icon" style="font-size:2rem;"><i class="bi bi-wifi"></i></div>' +
+                '<p style="color:var(--text-muted);font-size:0.85rem;margin:0;">No devices connected yet</p>' +
+                '</div>';
+            return;
+        }
+        let html = '';
+        data.devices.forEach(function(d) {
+            const statusColor = d.status === 'active' ? 'success' : 'danger';
+            const timeDiff = d.last_seen ? Math.floor((Date.now() - new Date(d.last_seen).getTime()) / 1000) : null;
+            const statusText = timeDiff !== null && timeDiff < 30 ? 'Online' : 'Offline';
+            html += '<div class="data-point" style="margin-bottom:8px;">';
+            html += '<div class="dot" style="background:var(--' + statusColor + ');"></div>';
+            html += '<span class="label" style="font-weight:600;">' + d.device_id + '</span>';
+            html += '<span class="badge badge-' + statusColor + '">' + statusText + '</span>';
+            html += '</div>';
+        });
+        document.getElementById('devicesList').innerHTML = html;
+    } catch (err) {}
+}
+
+async function loadLatest() {
+    try {
+        const resp = await fetch('/api/hardware/latest');
+        const data = await resp.json();
+        if (!data.reading) return;
+
+        const r = data.reading;
+        const color = classColors[r.classification] || 'primary';
+        const circumference = 2 * Math.PI * 45;
+        const offset = circumference - ((r.confidence || 0) * circumference);
+
+        let html = '<div class="grid-hardware-latest" style="gap:24px;">';
+        html += '<div>';
+        html += '<div class="grid-sensor-2" style="margin-bottom:16px;">';
+
+        const sensors = [
+            ['Temperature', r.temperature + '°C', r.temperature > 50 ? 'danger' : r.temperature > 35 ? 'warning' : 'success'],
+            ['Humidity', r.humidity + '%', r.humidity > 100 ? 'danger' : 'info'],
+            ['Smoke', r.smoke, r.smoke > 50 ? 'danger' : 'success'],
+            ['Gas', r.gas, r.gas > 50 ? 'danger' : 'success']
+        ];
+        sensors.forEach(function(s) {
+            html += '<div class="data-point"><div class="dot" style="background:var(--' + s[2] + ');"></div>';
+            html += '<span class="label">' + s[0] + '</span><span class="value">' + s[1] + '</span></div>';
+        });
+
+        html += '</div>';
+        html += '<div class="grid-sensor-4" style="margin-top:16px;">';
+        html += '<div style="text-align:center;padding:10px 8px;background:var(--data-point-bg);border-radius:8px;"><div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Motion</div><div style="font-weight:650;color:var(--text-primary);margin-top:3px;">' + (r.motion ? 'Yes' : 'No') + '</div></div>';
+        html += '<div style="text-align:center;padding:10px 8px;background:var(--data-point-bg);border-radius:8px;"><div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Door</div><div style="font-weight:650;color:var(--text-primary);margin-top:3px;">' + r.door_status + '</div></div>';
+        html += '<div style="text-align:center;padding:10px 8px;background:var(--data-point-bg);border-radius:8px;"><div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Power</div><div style="font-weight:650;color:var(--text-primary);margin-top:3px;">' + r.power_status + '</div></div>';
+        html += '<div style="text-align:center;padding:10px 8px;background:var(--data-point-bg);border-radius:8px;"><div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Device</div><div style="font-weight:650;color:var(--text-primary);margin-top:3px;font-size:0.72rem;">' + r.device_id + '</div></div>';
+        html += '</div>';
+        html += '</div>';
+
+        html += '<div class="confidence-panel" style="padding:20px;background:var(--data-point-bg);border-radius:10px;">';
+        html += '<div class="gauge"><svg width="120" height="120" viewBox="0 0 120 120">';
+        html += '<circle class="gauge-bg" cx="60" cy="60" r="45"/>';
+        html += '<circle class="gauge-fill" cx="60" cy="60" r="45" stroke="var(--' + color + ')" stroke-dasharray="' + circumference + '" stroke-dashoffset="' + offset + '"/>';
+        html += '</svg><div class="gauge-text"><div class="gauge-value">' + ((r.confidence || 0) * 100).toFixed(0) + '%</div><div class="gauge-label">Confidence</div></div></div>';
+        html += '<div style="margin-top:12px;"><span class="badge badge-' + color + '">' + (r.classification || 'unknown').toUpperCase() + '</span></div>';
+        html += '<div style="margin-top:8px;font-size:0.75rem;color:var(--text-muted);">' + r.created_at + '</div>';
+        html += '</div>';
+
+        html += '</div>';
+        document.getElementById('latestReading').innerHTML = html;
+    } catch (err) {}
+}
+
+async function loadReadings() {
+    try {
+        const resp = await fetch('/api/hardware/readings?limit=20');
+        const data = await resp.json();
+        if (!data.readings.length) return;
+
+        let html = '';
+        data.readings.forEach(function(r) {
+            const color = classColors[r.classification] || 'primary';
+            html += '<tr>';
+            html += '<td style="font-size:0.8rem;color:var(--text-muted);">' + r.created_at + '</td>';
+            html += '<td><span class="badge badge-primary">' + r.device_id + '</span></td>';
+            html += '<td>' + r.temperature + '°C</td>';
+            html += '<td>' + r.humidity + '%</td>';
+            html += '<td>' + r.smoke + '</td>';
+            html += '<td>' + r.gas + '</td>';
+            html += '<td>' + (r.motion ? 'Yes' : 'No') + '</td>';
+            html += '<td>' + r.door_status + '</td>';
+            html += '<td><span class="badge badge-' + color + '">' + r.classification + '</span></td>';
+            html += '<td>' + ((r.confidence || 0) * 100).toFixed(0) + '%</td>';
+            html += '</tr>';
+        });
+        document.querySelector('#readingsTable tbody').innerHTML = html;
+    } catch (err) {}
+}
+
+refreshData();
+setInterval(refreshData, 5000);
+</script>
+{% endblock %}

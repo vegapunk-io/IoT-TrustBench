@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% set active = "live" %}
+
+{% block title %}Live Simulation - IoT-TrustBench{% endblock %}
+{% block page_title %}Live Simulation{% endblock %}
+
+{% block content %}
+<div class="grid-live">
+    <div>
+        <div class="card" style="position:sticky;top:80px;">
+            <div class="card-header">
+                <h3><i class="bi bi-sliders" style="margin-right:8px;"></i>Controls</h3>
+            </div>
+            <div class="card-body">
+                <div style="display:flex;flex-direction:column;gap:16px;">
+                    <div>
+                        <label class="form-label">Scenario Type</label>
+                        <select id="scenarioType" class="form-select">
+                            <option value="normal">Normal</option>
+                            <option value="emergency">Emergency</option>
+                            <option value="sensor_fault">Sensor Fault</option>
+                            <option value="spoofing">Spoofing</option>
+                            <option value="offline">Device Offline</option>
+                            <option value="uncertain">Uncertain</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Device ID (optional)</label>
+                        <input type="text" id="deviceId" class="form-control" placeholder="DEV-001-TEMP">
+                    </div>
+                    <button id="runBtn" class="btn btn-primary" onclick="runSimulation()" style="justify-content:center;">
+                        <i class="bi bi-play-fill"></i> Run Simulation
+                    </button>
+                    <button class="btn btn-outline" onclick="runMultiple()" style="justify-content:center;">
+                        <i class="bi bi-arrow-repeat"></i> Run 5 Tests
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <div id="resultArea">
+            <div class="card">
+                <div class="card-body empty-state">
+                    <div class="icon"><i class="bi bi-cpu"></i></div>
+                    <h3>Ready to Simulate</h3>
+                    <p>Click "Run Simulation" to generate sensor readings and see the safety classification.</p>
+                </div>
+            </div>
+        </div>
+        <div id="historyLog" style="margin-top:24px;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let testHistory = [];
+
+async function runSimulation() {
+    const btn = document.getElementById('runBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Running...';
+
+    const type = document.getElementById('scenarioType').value;
+    const deviceId = document.getElementById('deviceId').value;
+
+    try {
+        const resp = await fetch('/api/simulate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({scenario_type: type, device_id: deviceId || null})
+        });
+        const data = await resp.json();
+        displayResult(data);
+        testHistory.unshift(data);
+        updateHistoryLog();
+    } catch (err) {
+        document.getElementById('resultArea').innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-fill"></i> Run Simulation';
+}
+
+async function runMultiple() {
+    for (let i = 0; i < 5; i++) await runSimulation();
+}
+
+function getConfidenceColor(conf) {
+    if (conf >= 0.8) return 'var(--success)';
+    if (conf >= 0.5) return 'var(--warning)';
+    return 'var(--danger)';
+}
+
+function getConfidenceLabel(conf) {
+    if (conf >= 0.8) return 'High';
+    if (conf >= 0.5) return 'Medium';
+    return 'Low';
+}
+
+function getSensorColor(type, value) {
+    const thresholds = {
+        temperature: { low: 18, high: 35, critical: 50 },
+        humidity: { low: 20, high: 80, critical: 100 },
+        smoke: { low: 0, high: 10, critical: 50 },
+        gas: { low: 0, high: 20, critical: 50 }
+    };
+    const t = thresholds[type];
+    if (!t) return 'var(--text-muted)';
+    if (value < t.low || value > t.high) return value > t.critical ? 'var(--danger)' : 'var(--warning)';
+    return 'var(--success)';
+}
+
+function displayResult(data) {
+    const dec = data.decision;
+    const read = data.reading;
+    const val = data.validation;
+
+    const classConfig = {
+        normal: { color: 'success', icon: 'shield-check', label: 'Normal' },
+        emergency: { color: 'danger', icon: 'exclamation-triangle', label: 'Emergency' },
+        sensor_fault: { color: 'warning', icon: 'exclamation-circle', label: 'Sensor Fault' },
+        spoofing: { color: 'secondary', icon: 'shield-x', label: 'Spoofing' },
+        offline: { color: 'dark', icon: 'wifi-off', label: 'Offline' },
+        uncertain: { color: 'info', icon: 'question-circle', label: 'Uncertain' }
+    };
+    const cfg = classConfig[dec.classification] || classConfig.normal;
+    const circumference = 2 * Math.PI * 45;
+    const offset = circumference - (dec.confidence * circumference);
+
+    let html = `
+    <div class="card animate-in" style="border-left:4px solid var(--${cfg.color});">
+            <div class="card-body" style="padding:0;">
+                <div class="result-card-layout" style="display:flex;align-items:stretch;">
+                <div style="flex:1;padding:24px;">
+                    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+                        <div class="stat-icon" style="background:var(--stat-icon-${cfg.color});color:var(--${cfg.color});">
+                            <i class="bi bi-${cfg.icon}" style="font-size:1.5rem;"></i>
+                        </div>
+                        <div>
+                            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);font-weight:600;">Classification</div>
+                            <div style="font-size:1.5rem;font-weight:800;color:var(--text-primary);line-height:1.2;">${cfg.label}</div>
+                        </div>
+                    </div>
+
+                    <div class="grid-sensor-2" style="margin-bottom:20px;">
+                        ${[
+                            ['Temperature', read.temperature + '°C', getSensorColor('temperature', read.temperature)],
+                            ['Humidity', read.humidity + '%', getSensorColor('humidity', read.humidity)],
+                            ['Smoke', read.smoke, getSensorColor('smoke', read.smoke)],
+                            ['Gas', read.gas, getSensorColor('gas', read.gas)]
+                        ].map(([label, val, color]) => `
+                            <div class="data-point">
+                                <div class="dot" style="background:${color};"></div>
+                                <span class="label">${label}</span>
+                                <span class="value">${val}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="grid-sensor-4" style="margin-bottom:20px;">
+                        ${[
+                            ['Motion', read.motion ? 'Yes' : 'No', read.motion ? 'warning' : 'secondary'],
+                            ['Door', read.door_status, 'secondary'],
+                            ['Power', read.power_status, read.power_status === 'on' ? 'success' : 'danger'],
+                            ['Device', read.device_id.split('-').pop(), 'primary']
+                        ].map(([label, val, cls]) => `
+                            <div style="text-align:center;padding:10px 8px;background:var(--data-point-bg);border-radius:8px;">
+                                <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">${label}</div>
+                                <div style="font-size:0.82rem;font-weight:650;color:var(--text-primary);margin-top:3px;">${val}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div style="padding:14px 16px;background:var(--data-point-bg);border-radius:10px;margin-bottom:16px;">
+                        <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:6px;font-weight:650;">Reasoning</div>
+                        <p style="font-size:0.85rem;color:var(--text-secondary);margin:0;">${dec.reasoning}</p>
+                    </div>
+
+                    <div style="padding:14px 16px;background:var(--badge-primary-bg);border-radius:10px;border-left:3px solid var(--primary);">
+                        <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--primary);margin-bottom:6px;font-weight:650;">LLM Explanation</div>
+                        <p style="font-size:0.85rem;color:var(--text-secondary);margin:0;font-style:italic;">${data.llm_explanation}</p>
+                    </div>
+
+                    ${dec.requires_human_verification ? '<div class="alert alert-warning" style="margin-top:16px;margin-bottom:0;"><i class="bi bi-person-check" style="margin-right:6px;"></i>Human verification required</div>' : ''}
+                </div>
+
+                <div class="confidence-panel">
+                    <div class="gauge">
+                        <svg width="120" height="120" viewBox="0 0 120 120">
+                            <circle class="gauge-bg" cx="60" cy="60" r="45"/>
+                            <circle class="gauge-fill" cx="60" cy="60" r="45"
+                                stroke="var(--${cfg.color})"
+                                stroke-dasharray="${circumference}"
+                                stroke-dashoffset="${offset}"/>
+                        </svg>
+                        <div class="gauge-text">
+                            <div class="gauge-value">${(dec.confidence * 100).toFixed(0)}%</div>
+                            <div class="gauge-label">Confidence</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:16px;text-align:center;">
+                        <span class="badge badge-${cfg.color}" style="font-size:0.7rem;">${getConfidenceLabel(dec.confidence)}</span>
+                    </div>
+                    <div style="margin-top:12px;font-size:0.7rem;color:var(--text-muted);text-align:center;">
+                        <div><i class="bi bi-clock"></i> ${data.execution_time_ms}ms</div>
+                        <div style="margin-top:4px;"><i class="bi bi-check-circle"></i> ${val.is_valid ? 'Valid' : 'Invalid'}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>`;
+
+    document.getElementById('resultArea').innerHTML = html;
+}
+
+function updateHistoryLog() {
+    if (testHistory.length === 0) return;
+    const classColors = {normal:'success',emergency:'danger',sensor_fault:'warning',spoofing:'secondary',offline:'secondary',uncertain:'info'};
+    let html = `<div class="card animate-in"><div class="card-header"><h3><i class="bi bi-clock-history" style="margin-right:8px;"></i>Test History (${testHistory.length})</h3></div><div class="card-body" style="padding:0;"><table class="table"><thead><tr><th>Classification</th><th>Confidence</th><th>Temp</th><th>Smoke</th><th>Gas</th><th>Time</th></tr></thead><tbody>`;
+    testHistory.slice(0, 10).forEach(d => {
+        const c = classColors[d.decision.classification] || 'primary';
+        html += `<tr class="animate-slide"><td><span class="badge badge-${c}">${d.decision.classification.toUpperCase()}</span></td><td>${(d.decision.confidence*100).toFixed(0)}%</td><td>${d.reading.temperature}°C</td><td>${d.reading.smoke}</td><td>${d.reading.gas}</td><td>${d.execution_time_ms}ms</td></tr>`;
+    });
+    html += '</tbody></table></div></div>';
+    document.getElementById('historyLog').innerHTML = html;
+}
+</script>
+{% endblock %}
