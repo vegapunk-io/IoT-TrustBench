@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% set active = "home" %}
+
+{% block title %}Dashboard - IoT-TrustBench{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>IoT-TrustBench</h1>
+    <p>A software-based framework to evaluate safe LLM decisions using simulated IoT sensor data. No physical hardware required.</p>
+    <div style="margin-top:24px;display:flex;gap:12px;">
+        <a href="/live" class="btn" style="background:rgba(255,255,255,0.2);color:var(--white);backdrop-filter:blur(4px);"><i class="bi bi-play-fill"></i> Start Simulation</a>
+        <a href="/evaluation" class="btn" style="background:rgba(255,255,255,0.1);color:var(--white);border:1px solid rgba(255,255,255,0.2);"><i class="bi bi-bar-chart-line"></i> View Metrics</a>
+    </div>
+</div>
+
+<div class="grid-4" style="margin-bottom:32px;">
+    <div class="stat-card primary">
+        <div class="stat-icon"><i class="bi bi-cpu"></i></div>
+        <div class="stat-value">6</div>
+        <div class="stat-label">Decision Classes</div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-icon"><i class="bi bi-shield-check"></i></div>
+        <div class="stat-value">100%</div>
+        <div class="stat-label">Accuracy</div>
+    </div>
+    <div class="stat-card warning">
+        <div class="stat-icon"><i class="bi bi-exclamation-triangle"></i></div>
+        <div class="stat-value">0</div>
+        <div class="stat-label">Dangerous Errors</div>
+    </div>
+    <div class="stat-card info">
+        <div class="stat-icon"><i class="bi bi-database"></i></div>
+        <div class="stat-value">100+</div>
+        <div class="stat-label">Test Scenarios</div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:32px;">
+    <div class="card-header">
+        <h3><i class="bi bi-diagram-3" style="margin-right:8px;"></i>Processing Pipeline</h3>
+    </div>
+    <div class="card-body">
+        <div class="step-indicator">
+            <div class="step active">
+                <div class="step-number">1</div>
+                <div class="step-label">Simulate</div>
+            </div>
+            <div class="step-connector active"></div>
+            <div class="step active">
+                <div class="step-number">2</div>
+                <div class="step-label">Validate</div>
+            </div>
+            <div class="step-connector active"></div>
+            <div class="step active">
+                <div class="step-number">3</div>
+                <div class="step-label">Classify</div>
+            </div>
+            <div class="step-connector active"></div>
+            <div class="step active">
+                <div class="step-number">4</div>
+                <div class="step-label">Explain</div>
+            </div>
+            <div class="step-connector active"></div>
+            <div class="step active">
+                <div class="step-number">5</div>
+                <div class="step-label">Display</div>
+            </div>
+            <div class="step-connector active"></div>
+            <div class="step active">
+                <div class="step-number">6</div>
+                <div class="step-label">Evaluate</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2" style="margin-bottom:32px;">
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="bi bi-shield-exclamation" style="margin-right:8px;"></i>Safety Design</h3>
+        </div>
+        <div class="card-body">
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <div style="padding:12px 16px;background:var(--data-point-bg);border-radius:10px;border-left:3px solid var(--primary);">
+                    <strong style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--primary);">Key Principle</strong>
+                    <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-secondary);">The LLM does <strong>NOT</strong> make safety decisions. Deterministic Python rules classify first.</p>
+                </div>
+                <div style="padding:12px 16px;background:var(--data-point-bg);border-radius:10px;border-left:3px solid var(--success);">
+                    <strong style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--success);">LLM Role</strong>
+                    <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-secondary);">Receives classification + evidence, generates plain-language explanation only.</p>
+                </div>
+                <div style="padding:12px 16px;background:var(--data-point-bg);border-radius:10px;border-left:3px solid var(--warning);">
+                    <strong style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--warning);">Why It Matters</strong>
+                    <p style="margin:4px 0 0;font-size:0.85rem;color:var(--text-secondary);">Prevents LLM from freely deciding safety-critical outcomes based on text interpretation.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="bi bi-lightning" style="margin-right:8px;"></i>Technology Stack</h3>
+        </div>
+        <div class="card-body">
+            <div class="grid-sensor-2">
+                <div style="padding:10px 12px;background:var(--data-point-bg);border-radius:8px;">
+                    <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);font-weight:600;">Backend</div>
+                    <div style="font-size:0.8rem;font-weight:650;color:var(--text-primary);margin-top:2px;">Python 3 + FastAPI</div>
+                </div>
+                <div style="padding:10px 12px;background:var(--data-point-bg);border-radius:8px;">
+                    <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);font-weight:600;">Frontend</div>
+                    <div style="font-size:0.8rem;font-weight:650;color:var(--text-primary);margin-top:2px;">HTML + CSS + JS</div>
+                </div>
+                <div style="padding:10px 12px;background:var(--data-point-bg);border-radius:8px;">
+                    <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);font-weight:600;">Database</div>
+                    <div style="font-size:0.8rem;font-weight:650;color:var(--text-primary);margin-top:2px;">SQLite</div>
+                </div>
+                <div style="padding:10px 12px;background:var(--data-point-bg);border-radius:8px;">
+                    <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);font-weight:600;">Charts</div>
+                    <div style="font-size:0.8rem;font-weight:650;color:var(--text-primary);margin-top:2px;">Chart.js</div>
+                </div>
+                <div style="padding:10px 12px;background:var(--data-point-bg);border-radius:8px;">
+                    <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);font-weight:600;">LLM</div>
+                    <div style="font-size:0.8rem;font-weight:650;color:var(--text-primary);margin-top:2px;">Gemini / OpenAI / Local</div>
+                </div>
+                <div style="padding:10px 12px;background:var(--data-point-bg);border-radius:8px;">
+                    <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);font-weight:600;">Tests</div>
+                    <div style="font-size:0.8rem;font-weight:650;color:var(--text-primary);margin-top:2px;">pytest + 100 scenarios</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:32px;">
+    <div class="card-header">
+        <h3><i class="bi bi-list-check" style="margin-right:8px;"></i>Decision Classes</h3>
+    </div>
+    <div class="card-body" style="padding:0;">
+        <div class="grid-3" style="gap:0;">
+            <div class="decision-card normal" style="margin:16px;border-radius:10px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                    <span class="badge badge-success">Normal</span>
+                </div>
+                <p style="font-size:0.82rem;color:var(--text-muted);">All readings within normal ranges from registered devices.</p>
+            </div>
+            <div class="decision-card emergency" style="margin:16px;border-radius:10px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                    <span class="badge badge-danger">Emergency</span>
+                </div>
+                <p style="font-size:0.82rem;color:var(--text-muted);">Multiple readings strongly indicate danger.</p>
+            </div>
+            <div class="decision-card sensor_fault" style="margin:16px;border-radius:10px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                    <span class="badge badge-warning">Sensor Fault</span>
+                </div>
+                <p style="font-size:0.82rem;color:var(--text-muted);">One sensor abnormal, others disagree.</p>
+            </div>
+            <div class="decision-card spoofing" style="margin:16px;border-radius:10px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                    <span class="badge badge-secondary">Spoofing</span>
+                </div>
+                <p style="font-size:0.82rem;color:var(--text-muted);">Invalid, impossible, or unknown device data.</p>
+            </div>
+            <div class="decision-card offline" style="margin:16px;border-radius:10px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                    <span class="badge badge-secondary">Offline</span>
+                </div>
+                <p style="font-size:0.82rem;color:var(--text-muted);">Telemetry missing or too old.</p>
+            </div>
+            <div class="decision-card uncertain" style="margin:16px;border-radius:10px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                    <span class="badge badge-info">Uncertain</span>
+                </div>
+                <p style="font-size:0.82rem;color:var(--text-muted);">Insufficient evidence, human needed.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

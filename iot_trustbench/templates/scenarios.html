@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% set active = "scenarios" %}
+
+{% block title %}Scenarios - IoT-TrustBench{% endblock %}
+{% block page_title %}Scenario Runner{% endblock %}
+
+{% block content %}
+<div class="grid-live" style="margin-bottom:32px;">
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="bi bi-grid-3x3-gap" style="margin-right:8px;"></i>Batch Test Configuration</h3>
+        </div>
+        <div class="card-body">
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <div>
+                    <label class="form-label">Tests Per Type</label>
+                    <input type="number" id="countPerType" class="form-control" value="20" min="1" max="100">
+                </div>
+                <button class="btn btn-primary btn-lg" onclick="runBatchTest()" id="batchBtn" style="justify-content:center;">
+                    <i class="bi bi-play-fill"></i> Run All Tests
+                </button>
+                <button class="btn btn-outline" onclick="resetHistory()" style="justify-content:center;">
+                    <i class="bi bi-trash"></i> Clear History
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-body" style="text-align:center;" id="statsCard">
+            <div class="empty-state" style="padding:20px;">
+                <div class="icon" style="font-size:2rem;"><i class="bi bi-bar-chart"></i></div>
+                <p style="color:var(--text-muted);font-size:0.85rem;margin:0;">Run a test to see results</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="batchResult"></div>
+
+<div class="card">
+    <div class="card-header">
+        <h3><i class="bi bi-table" style="margin-right:8px;"></i>Saved Scenarios</h3>
+    </div>
+    <div class="card-body" style="padding:0;">
+        <table class="table" id="scenariosTable">
+            <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Expected</th><th>Created</th></tr></thead>
+            <tbody>
+                <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:40px;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runBatchTest() {
+    const count = document.getElementById('countPerType').value;
+    const btn = document.getElementById('batchBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Running...';
+    document.getElementById('batchResult').innerHTML = '<div class="alert alert-info animate-in"><i class="bi bi-info-circle" style="margin-right:8px;"></i>Running batch test across all scenario types. This may take a moment...</div>';
+    document.getElementById('statsCard').innerHTML = '<div class="skeleton" style="height:80px;"></div>';
+
+    try {
+        const resp = await fetch('/api/batch-test', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({count_per_type: parseInt(count)})
+        });
+        const data = await resp.json();
+        displayBatchResult(data);
+
+        const accColor = data.accuracy >= 0.9 ? 'success' : data.accuracy >= 0.7 ? 'warning' : 'danger';
+        document.getElementById('statsCard').innerHTML = `
+            <div style="padding:12px;">
+                <div style="font-size:2.5rem;font-weight:800;color:var(--${accColor});line-height:1;">${(data.accuracy * 100).toFixed(1)}%</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-top:4px;font-weight:600;">Accuracy</div>
+                <div style="margin-top:12px;display:flex;justify-content:space-between;font-size:0.8rem;">
+                    <span style="color:var(--success);"><i class="bi bi-check-circle"></i> ${data.correct} correct</span>
+                    <span style="color:var(--text-muted);">${data.total_tests} total</span>
+                </div>
+                <div style="margin-top:4px;font-size:0.8rem;color:var(--text-muted);">
+                    <i class="bi bi-clock"></i> ${(data.total_time_ms/1000).toFixed(1)}s
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        document.getElementById('batchResult').innerHTML = '<div class="alert alert-danger animate-in"><i class="bi bi-exclamation-triangle" style="margin-right:8px;"></i>' + err.message + '</div>';
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-fill"></i> Run All Tests';
+    loadScenarios();
+}
+
+function displayBatchResult(data) {
+    const classColors = {normal:'success',emergency:'danger',sensor_fault:'warning',spoofing:'secondary',offline:'dark',uncertain:'info'};
+    let html = '<div class="card animate-in" style="margin-bottom:24px;">';
+    html += '<div class="card-header" style="background:var(--primary);color:var(--white);"><h3 style="color:var(--white);"><i class="bi bi-clipboard-check" style="margin-right:8px;"></i>Batch Test Results</h3></div>';
+    html += '<div class="card-body">';
+
+    html += '<div class="grid-4" style="margin-bottom:24px;">';
+    html += '<div class="stat-card primary"><div class="stat-icon"><i class="bi bi-list-ol"></i></div><div class="stat-value">' + data.total_tests + '</div><div class="stat-label">Total Tests</div></div>';
+    html += '<div class="stat-card success"><div class="stat-icon"><i class="bi bi-check-circle"></i></div><div class="stat-value">' + data.correct + '</div><div class="stat-label">Correct</div></div>';
+    html += '<div class="stat-card info"><div class="stat-icon"><i class="bi bi-percent"></i></div><div class="stat-value">' + (data.accuracy * 100).toFixed(1) + '%</div><div class="stat-label">Accuracy</div></div>';
+    html += '<div class="stat-card danger"><div class="stat-icon"><i class="bi bi-exclamation-octagon"></i></div><div class="stat-value">' + data.metrics.dangerous_errors + '</div><div class="stat-label">Dangerous Errors</div></div>';
+    html += '</div>';
+
+    if (data.metrics.by_class) {
+        html += '<h4 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:12px;font-weight:650;">Per-Class Metrics</h4>';
+        html += '<div class="table-wrapper" style="margin-bottom:24px;"><table class="table"><thead><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1</th><th>Support</th></tr></thead><tbody>';
+        for (const [cls, m] of Object.entries(data.metrics.by_class)) {
+            html += '<tr><td><span class="badge badge-' + (classColors[cls] || 'primary') + '">' + cls + '</span></td>';
+            html += '<td>' + (m.precision*100).toFixed(1) + '%</td>';
+            html += '<td>' + (m.recall*100).toFixed(1) + '%</td>';
+            html += '<td>' + (m.f1*100).toFixed(1) + '%</td>';
+            html += '<td>' + m.support + '</td></tr>';
+        }
+        html += '</tbody></table></div>';
+    }
+
+    html += '<h4 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:12px;font-weight:650;">Confusion Matrix</h4>';
+    html += '<div class="table-wrapper" style="margin-top:12px;margin-bottom:24px;"><table class="table table-bordered" style="margin:0;"><thead><tr><th style="background:var(--text-primary);color:#fff;">Expected \\ Predicted</th>';
+    const classes = ['normal', 'emergency', 'sensor_fault', 'spoofing', 'offline', 'uncertain'];
+    classes.forEach(function(c) { html += '<th style="background:var(--text-primary);color:#fff;">' + c + '</th>'; });
+    html += '</tr></thead><tbody>';
+
+    const confusion = {};
+    data.results.forEach(function(r) { confusion[r.expected + '_' + r.predicted] = (confusion[r.expected + '_' + r.predicted] || 0) + 1; });
+
+    classes.forEach(function(exp) {
+        html += '<tr><td style="font-weight:600;background:var(--data-point-bg);">' + exp + '</td>';
+        classes.forEach(function(pred) {
+            var count = confusion[exp + '_' + pred] || 0;
+            var bg = exp === pred ? 'background:rgba(16,185,129,0.15);font-weight:600;' : (count > 0 && exp === 'emergency' && pred === 'normal' ? 'background:rgba(239,68,68,0.2);' : '');
+            html += '<td style="' + bg + '">' + count + '</td>';
+        });
+        html += '</tr>';
+    });
+    html += '</tbody></table></div></div></div>';
+    document.getElementById('batchResult').innerHTML = html;
+}
+
+async function loadScenarios() {
+    try {
+        const resp = await fetch('/api/scenarios');
+        const data = await resp.json();
+        const tbody = document.querySelector('#scenariosTable tbody');
+        if (data.scenarios.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:40px;">No scenarios yet. Run a batch test first.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.scenarios.slice(-15).map(function(s) {
+            return '<tr><td>' + s.id + '</td><td>' + s.name + '</td><td><span class="badge badge-primary">' + s.scenario_type + '</span></td><td><span class="badge badge-' + (s.expected_class === 'emergency' ? 'danger' : 'success') + '">' + s.expected_class + '</span></td><td style="font-size:0.8rem;color:var(--text-muted);">' + s.created_at + '</td></tr>';
+        }).join('');
+    } catch (err) {}
+}
+
+async function resetHistory() {
+    if (!confirm('Clear all history and test results?')) return;
+    await fetch('/api/reset-history', {method: 'POST'});
+    loadScenarios();
+    document.getElementById('batchResult').innerHTML = '<div class="alert alert-success animate-in"><i class="bi bi-check-circle" style="margin-right:8px;"></i>History cleared successfully.</div>';
+    document.getElementById('statsCard').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon" style="font-size:2rem;"><i class="bi bi-bar-chart"></i></div><p style="color:var(--text-muted);font-size:0.85rem;margin:0;">Run a test to see results</p></div>';
+}
+
+loadScenarios();
+</script>
+{% endblock %}

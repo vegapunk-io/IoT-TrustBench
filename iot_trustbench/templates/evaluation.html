@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% set active = "evaluation" %}
+
+{% block title %}Evaluation - IoT-TrustBench{% endblock %}
+{% block page_title %}Evaluation Metrics{% endblock %}
+
+{% block content %}
+<div id="metricsContent">
+    <div class="card">
+        <div class="card-body empty-state">
+            <div class="icon"><i class="bi bi-bar-chart-line"></i></div>
+            <h3>Loading Metrics</h3>
+            <p>Fetching evaluation data...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadMetrics() {
+    try {
+        const resp = await fetch('/api/evaluation');
+        const data = await resp.json();
+
+        if (data.total === 0) {
+            document.getElementById('metricsContent').innerHTML = `
+                <div class="card">
+                    <div class="card-body empty-state">
+                        <div class="icon"><i class="bi bi-inbox"></i></div>
+                        <h3>No Test Results</h3>
+                        <p>Run batch tests to see evaluation metrics.</p>
+                        <a href="/scenarios" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Batch Tests</a>
+                    </div>
+                </div>`;
+            return;
+        }
+
+        const classes = Object.keys(data.by_class);
+        const classColors = {normal:'#10b981',emergency:'#ef4444',sensor_fault:'#f59e0b',spoofing:'#64748b',offline:'#334155',uncertain:'#06b6d4'};
+
+        let html = `
+        <div class="grid-4" style="margin-bottom:32px;">
+            <div class="stat-card primary">
+                <div class="stat-icon"><i class="bi bi-list-ol"></i></div>
+                <div class="stat-value">${data.total}</div>
+                <div class="stat-label">Total Tests</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
+                <div class="stat-value">${(data.accuracy * 100).toFixed(1)}%</div>
+                <div class="stat-label">Accuracy</div>
+            </div>
+            <div class="stat-card danger">
+                <div class="stat-icon"><i class="bi bi-exclamation-octagon"></i></div>
+                <div class="stat-value">${data.dangerous_errors}</div>
+                <div class="stat-label">Dangerous Errors</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-icon"><i class="bi bi-bell"></i></div>
+                <div class="stat-value">${(data.false_alarm_rate * 100).toFixed(1)}%</div>
+                <div class="stat-label">False Alarm Rate</div>
+            </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:32px;">
+            <div class="card">
+                <div class="card-header"><h3><i class="bi bi-bar-chart" style="margin-right:8px;"></i>Precision & Recall</h3></div>
+                <div class="card-body"><canvas id="classChart" height="280"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h3><i class="bi bi-pie-chart" style="margin-right:8px;"></i>Test Distribution</h3></div>
+                <div class="card-body"><canvas id="distChart" height="280"></canvas></div>
+            </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:32px;">
+            <div class="card">
+                <div class="card-header"><h3><i class="bi bi-activity" style="margin-right:8px;"></i>F1 Score Comparison</h3></div>
+                <div class="card-body"><canvas id="f1Chart" height="280"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h3><i class="bi bi-radar" style="margin-right:8px;"></i>Class Performance Radar</h3></div>
+                <div class="card-body"><canvas id="radarChart" height="280"></canvas></div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:32px;">
+            <div class="card-header"><h3><i class="bi bi-table" style="margin-right:8px;"></i>Detailed Metrics</h3></div>
+            <div class="card-body" style="padding:0;">
+                <table class="table">
+                    <thead><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1 Score</th><th>Support</th><th>Status</th></tr></thead>
+                    <tbody>`;
+
+        classes.forEach(c => {
+            const m = data.by_class[c];
+            const f1Score = m.f1;
+            const status = f1Score >= 0.9 ? 'success' : f1Score >= 0.7 ? 'warning' : 'danger';
+            const statusText = f1Score >= 0.9 ? 'Excellent' : f1Score >= 0.7 ? 'Good' : 'Needs Work';
+            html += `<tr>
+                <td><span class="badge badge-${c === 'emergency' ? 'danger' : c === 'normal' ? 'success' : c === 'sensor_fault' ? 'warning' : c === 'uncertain' ? 'info' : 'secondary'}">${c}</span></td>
+                <td><div style="display:flex;align-items:center;gap:8px;"><div class="progress-bar" style="width:80px;"><div class="progress-bar-fill" style="width:${m.precision*100}%;background:var(--primary);"></div></div>${(m.precision*100).toFixed(1)}%</div></td>
+                <td><div style="display:flex;align-items:center;gap:8px;"><div class="progress-bar" style="width:80px;"><div class="progress-bar-fill" style="width:${m.recall*100}%;background:var(--success);"></div></div>${(m.recall*100).toFixed(1)}%</div></td>
+                <td><div style="display:flex;align-items:center;gap:8px;"><div class="progress-bar" style="width:80px;"><div class="progress-bar-fill" style="width:${m.f1*100}%;background:var(--info);"></div></div>${(m.f1*100).toFixed(1)}%</div></td>
+                <td>${m.support}</td>
+                <td><span class="badge badge-${status}">${statusText}</span></td>
+            </tr>`;
+        });
+
+        html += '</tbody></table></div></div>
+
+        html += `<div class="card">
+            <div class="card-header"><h3><i class="bi bi-clipboard-data" style="margin-right:8px;"></i>Summary</h3></div>
+            <div class="card-body">
+                <div class="grid-summary-3">
+                    <div style="padding:20px;background:var(--data-point-bg);border-radius:10px;text-align:center;">
+                        <div style="font-size:2.5rem;font-weight:800;color:var(--success);">${data.correct}</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Correct</div>
+                    </div>
+                    <div style="padding:20px;background:var(--data-point-bg);border-radius:10px;text-align:center;">
+                        <div style="font-size:2.5rem;font-weight:800;color:var(--danger);">${data.dangerous_errors}</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Dangerous Errors</div>
+                    </div>
+                    <div style="padding:20px;background:var(--data-point-bg);border-radius:10px;text-align:center;">
+                        <div style="font-size:2.5rem;font-weight:800;color:var(--success);">0</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Emergency-to-Normal</div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+        document.getElementById('metricsContent').innerHTML = html;
+
+        const precisions = classes.map(c => data.by_class[c].precision * 100);
+        const recalls = classes.map(c => data.by_class[c].recall * 100);
+        const f1s = classes.map(c => data.by_class[c].f1 * 100);
+        const supports = classes.map(c => data.by_class[c].support);
+        const colors = classes.map(c => classColors[c]);
+
+        const isMobile = window.innerWidth < 768;
+        const legendPosition = isMobile ? 'bottom' : 'top';
+        const tickFontSize = isMobile ? 10 : 12;
+
+        const style = getComputedStyle(document.documentElement);
+        const gridColor = style.getPropertyValue('--border').trim();
+        const textColor = style.getPropertyValue('--text-muted').trim();
+        const legendColor = style.getPropertyValue('--text-secondary').trim();
+
+        new Chart(document.getElementById('classChart'), {
+            type: 'bar',
+            data: {
+                labels: classes,
+                datasets: [
+                    { label: 'Precision', data: precisions, backgroundColor: 'rgba(99,102,241,0.8)', borderRadius: 6 },
+                    { label: 'Recall', data: recalls, backgroundColor: 'rgba(16,185,129,0.8)', borderRadius: 6 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: legendPosition, labels: { font: { size: tickFontSize }, color: legendColor } } },
+                scales: {
+                    y: { beginAtZero: true, max: 100, grid: { color: gridColor }, ticks: { font: { size: tickFontSize }, color: textColor } },
+                    x: { grid: { display: false }, ticks: { font: { size: tickFontSize }, color: textColor } }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('distChart'), {
+            type: 'doughnut',
+            data: {
+                labels: classes,
+                datasets: [{ data: supports, backgroundColor: colors, borderWidth: 0, hoverOffset: 8 }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: isMobile ? '50%' : '60%',
+                plugins: { legend: { position: 'bottom', labels: { padding: isMobile ? 10 : 16, font: { size: tickFontSize }, color: legendColor } } }
+            }
+        });
+
+        new Chart(document.getElementById('f1Chart'), {
+            type: 'bar',
+            data: {
+                labels: classes,
+                datasets: [{ label: 'F1 Score', data: f1s, backgroundColor: colors.map(c => c + 'cc'), borderRadius: 6 }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, max: 100, grid: { color: gridColor }, ticks: { font: { size: tickFontSize }, color: textColor } },
+                    y: { grid: { display: false }, ticks: { font: { size: tickFontSize }, color: textColor } }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('radarChart'), {
+            type: 'radar',
+            data: {
+                labels: classes,
+                datasets: [
+                    { label: 'Precision', data: precisions, borderColor: 'rgba(99,102,241,1)', backgroundColor: 'rgba(99,102,241,0.1)', pointBackgroundColor: 'rgba(99,102,241,1)' },
+                    { label: 'Recall', data: recalls, borderColor: 'rgba(16,185,129,1)', backgroundColor: 'rgba(16,185,129,0.1)', pointBackgroundColor: 'rgba(16,185,129,1)' },
+                    { label: 'F1 Score', data: f1s, borderColor: 'rgba(6,182,212,1)', backgroundColor: 'rgba(6,182,212,0.1)', pointBackgroundColor: 'rgba(6,182,212,1)' }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { r: { beginAtZero: true, max: 100, ticks: { stepSize: 20, font: { size: tickFontSize - 2 }, color: textColor }, pointLabels: { font: { size: tickFontSize }, color: legendColor }, grid: { color: gridColor } } },
+                plugins: { legend: { position: 'bottom', labels: { font: { size: tickFontSize }, color: legendColor } } }
+            }
+        });
+    } catch (err) {
+        document.getElementById('metricsContent').innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+    }
+}
+
+loadMetrics();
+</script>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% set active = "history" %}
+
+{% block title %}History - IoT-TrustBench{% endblock %}
+{% block page_title %}Decision History{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-outline" onclick="loadHistory()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+{% endblock %}
+
+{% block content %}
+<div id="historyContent">
+    <div class="card">
+        <div class="card-body empty-state">
+            <div class="icon"><i class="bi bi-hourglass-split"></i></div>
+            <h3>Loading History</h3>
+            <p>Fetching recent decisions...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadHistory() {
+    try {
+        const resp = await fetch('/api/decisions?limit=50');
+        const data = await resp.json();
+
+        if (!data.decisions.length) {
+            document.getElementById('historyContent').innerHTML =
+                '<div class="card"><div class="card-body empty-state">' +
+                '<div class="icon"><i class="bi bi-inbox"></i></div>' +
+                '<h3>No Decisions Yet</h3>' +
+                '<p>Run some simulations to see decision history.</p>' +
+                '<a href="/live" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</a>' +
+                '</div></div>';
+            return;
+        }
+
+        const classColors = {
+            normal: 'success', emergency: 'danger', sensor_fault: 'warning',
+            spoofing: 'secondary', offline: 'dark', uncertain: 'info'
+        };
+
+        const normalCount = data.decisions.filter(function(d) { return d.classification === 'normal'; }).length;
+        const emergencyCount = data.decisions.filter(function(d) { return d.classification === 'emergency'; }).length;
+        const humanCount = data.decisions.filter(function(d) { return d.requires_human_verification; }).length;
+
+        let html = '<div class="grid-4" style="margin-bottom:24px;">';
+        html += '<div class="stat-card primary"><div class="stat-icon"><i class="bi bi-list-ol"></i></div><div class="stat-value">' + data.decisions.length + '</div><div class="stat-label">Total Decisions</div></div>';
+        html += '<div class="stat-card success"><div class="stat-icon"><i class="bi bi-shield-check"></i></div><div class="stat-value">' + normalCount + '</div><div class="stat-label">Normal</div></div>';
+        html += '<div class="stat-card danger"><div class="stat-icon"><i class="bi bi-exclamation-triangle"></i></div><div class="stat-value">' + emergencyCount + '</div><div class="stat-label">Emergencies</div></div>';
+        html += '<div class="stat-card warning"><div class="stat-icon"><i class="bi bi-person-check"></i></div><div class="stat-value">' + humanCount + '</div><div class="stat-label">Human Review</div></div>';
+        html += '</div>';
+
+        html += '<div class="card"><div class="card-header"><h3><i class="bi bi-clock-history" style="margin-right:8px;"></i>Recent Decisions</h3></div>';
+        html += '<div class="card-body" style="padding:0;"><div class="table-wrapper"><table class="table"><thead><tr>';
+        html += '<th>ID</th><th>Classification</th><th>Confidence</th><th>Temperature</th><th>Smoke</th><th>Gas</th><th>Device</th><th>Human?</th><th>Time</th>';
+        html += '</tr></thead><tbody>';
+
+        data.decisions.forEach(function(d) {
+            const color = classColors[d.classification] || 'primary';
+            html += '<tr class="animate-slide">';
+            html += '<td style="font-weight:500;">#' + d.id + '</td>';
+            html += '<td><span class="badge badge-' + color + '">' + d.classification.toUpperCase() + '</span></td>';
+            html += '<td><div style="display:flex;align-items:center;gap:8px;">';
+            html += '<div class="progress-bar" style="width:60px;"><div class="progress-bar-fill" style="width:' + (d.confidence*100) + '%;background:var(--' + color + ');"></div></div>';
+            html += '<span style="font-size:0.8rem;">' + (d.confidence * 100).toFixed(0) + '%</span></div></td>';
+            html += '<td>' + d.temperature + '°C</td>';
+            html += '<td>' + d.smoke + '</td>';
+            html += '<td>' + d.gas + '</td>';
+            html += '<td><span class="badge badge-primary">' + d.device_id + '</span></td>';
+            html += '<td>' + (d.requires_human_verification ? '<span class="badge badge-warning"><i class="bi bi-person"></i> Yes</span>' : '<span class="badge badge-success">No</span>') + '</td>';
+            html += '<td style="font-size:0.8rem;color:var(--text-muted);">' + d.created_at + '</td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div></div></div>';
+        document.getElementById('historyContent').innerHTML = html;
+    } catch (err) {
+        document.getElementById('historyContent').innerHTML = '<div class="alert alert-danger">' + err.message + '</div>';
+    }
+}
+
+loadHistory();
+</script>
+{% endblock %}
