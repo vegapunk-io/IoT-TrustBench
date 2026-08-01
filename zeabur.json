@@ -1,0 +1,6 @@
+{
+  "build": [
+    "pip install -r requirements.txt"
+  ],
+  "start": "uvicorn iot_trustbench.api.app:app --host 0.0.0.0 --port $PORT"
+}
