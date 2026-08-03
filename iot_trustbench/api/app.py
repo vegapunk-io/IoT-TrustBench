@@ -1,7 +1,8 @@
+import os
 import time
 import json
 from datetime import datetime
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -14,6 +15,7 @@ from iot_trustbench.core.safety_engine import (
     classify_event,
     SafetyDecision,
     DecisionClass,
+    _is_device_trusted,
 )
 from iot_trustbench.core.llm_explainer import explain_decision
 from iot_trustbench.database.db import (
@@ -47,6 +49,8 @@ ALL_SCENARIO_TYPES = [
     "offline",
     "uncertain",
 ]
+
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 
 app = FastAPI(title="IoT-TrustBench", version="1.0.0")
 
@@ -95,6 +99,26 @@ class TrustedDeviceRequest(BaseModel):
 
 class TrustedDeviceEnableRequest(BaseModel):
     enabled: bool
+
+
+# ======================================================================
+# Admin key dependency
+# ======================================================================
+
+async def verify_admin_key(x_admin_key: Optional[str] = Header(None)) -> None:
+    """Verify the X-Admin-Key header against ADMIN_API_KEY.
+
+    In development mode (ADMIN_API_KEY not set), access is allowed
+    without a key so that local testing is easy.
+    """
+    if not ADMIN_API_KEY:
+        # Development mode — no key configured, allow all
+        return
+    if x_admin_key != ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing X-Admin-Key header",
+        )
 
 
 # ======================================================================
@@ -301,7 +325,9 @@ async def api_reset_history():
 async def api_hardware_reading(reading: HardwareReading):
     """Receive data from an ESP32 sensor node.
 
-    Unknown devices are NOT automatically trusted — they will be
+    The device trust status is resolved from the database BEFORE
+    classification.  Unknown devices that are not registered and
+    enabled in trusted_devices (and not in the static list) will be
     classified as spoofing.
     """
     start = time.time()
@@ -317,7 +343,13 @@ async def api_hardware_reading(reading: HardwareReading):
         timestamp=datetime.now(),
     )
     validation = validate_reading(sensor_reading)
-    decision = classify_event(sensor_reading, validation)
+
+    # Resolve trust status from database BEFORE classification
+    device_trusted = await _is_device_trusted(reading.device_id)
+
+    decision = classify_event(
+        sensor_reading, validation, device_trusted=device_trusted
+    )
 
     # Do NOT auto-trust unknown devices — only upsert hardware_devices
     await upsert_hardware_device(reading.device_id)
@@ -335,6 +367,7 @@ async def api_hardware_reading(reading: HardwareReading):
         "evidence": decision.evidence,
         "requires_human_verification": decision.requires_human_verification,
         "reasoning": decision.reasoning,
+        "device_trusted": device_trusted,
         "execution_time_ms": round(elapsed_ms, 2),
     }
 
@@ -360,19 +393,22 @@ async def api_hardware_latest(device_id: str = None):
 
 
 # ======================================================================
-# Trusted-device management API
+# Trusted-device management API (admin-protected for write ops)
 # ======================================================================
 
 @app.post("/api/trusted-devices")
-async def api_register_trusted_device(req: TrustedDeviceRequest):
-    """Register a new trusted device."""
+async def api_register_trusted_device(
+    req: TrustedDeviceRequest,
+    _admin: None = Depends(verify_admin_key),
+):
+    """Register a new trusted device. Requires X-Admin-Key header."""
     existing = await get_trusted_device(req.device_id)
     if existing:
         raise HTTPException(
             status_code=409,
             detail=f"Device '{req.device_id}' is already registered",
         )
-    device_id = await insert_trusted_device(
+    await insert_trusted_device(
         device_id=req.device_id,
         device_name=req.device_name,
         device_type=req.device_type,
@@ -383,14 +419,14 @@ async def api_register_trusted_device(req: TrustedDeviceRequest):
 
 @app.get("/api/trusted-devices")
 async def api_list_trusted_devices():
-    """List all trusted devices."""
+    """List all trusted devices (public read)."""
     devices = await get_trusted_devices()
     return {"devices": devices}
 
 
 @app.get("/api/trusted-devices/{device_id}")
 async def api_get_trusted_device(device_id: str):
-    """Get a single trusted device."""
+    """Get a single trusted device (public read)."""
     device = await get_trusted_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -399,9 +435,11 @@ async def api_get_trusted_device(device_id: str):
 
 @app.put("/api/trusted-devices/{device_id}/enable")
 async def api_enable_trusted_device(
-    device_id: str, req: TrustedDeviceEnableRequest
+    device_id: str,
+    req: TrustedDeviceEnableRequest,
+    _admin: None = Depends(verify_admin_key),
 ):
-    """Enable or disable a trusted device."""
+    """Enable or disable a trusted device. Requires X-Admin-Key header."""
     updated = await set_trusted_device_enabled(device_id, req.enabled)
     if not updated:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -410,8 +448,11 @@ async def api_enable_trusted_device(
 
 
 @app.delete("/api/trusted-devices/{device_id}")
-async def api_delete_trusted_device(device_id: str):
-    """Remove a trusted device."""
+async def api_delete_trusted_device(
+    device_id: str,
+    _admin: None = Depends(verify_admin_key),
+):
+    """Remove a trusted device. Requires X-Admin-Key header."""
     deleted = await delete_trusted_device(device_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Device not found")

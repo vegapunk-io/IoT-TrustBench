@@ -1,9 +1,16 @@
+import os
 import aiosqlite
 import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
-DB_PATH = "iot_trustbench.db"
+DB_PATH = os.getenv("IOT_DB_PATH", "iot_trustbench.db")
+
+
+def set_db_path(path: str) -> None:
+    """Override the database path (useful for testing with temp DBs)."""
+    global DB_PATH
+    DB_PATH = path
 
 
 async def get_db() -> aiosqlite.Connection:

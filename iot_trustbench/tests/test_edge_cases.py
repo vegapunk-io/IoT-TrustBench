@@ -480,3 +480,46 @@ def test_normal_ranges_no_warnings():
     assert len(range_warnings) == 0, (
         f"Normal values should not produce range warnings: {range_warnings}"
     )
+
+
+# ==================================================================
+# Trusted-device integration tests (unit-level, no DB)
+# ==================================================================
+
+def test_trusted_db_device_not_spoofed():
+    """A device with device_trusted=True should not be spoofed for the
+    unknown-device reason (only for impossible values)."""
+    reading = _make_reading(device_id="UNKNOWN-DB-DEVICE")
+    validation = validate_reading(reading)
+    decision = classify_event(reading, validation, device_trusted=True)
+    assert decision.classification == DecisionClass.NORMAL, (
+        f"Trusted DB device should be NORMAL, got {decision.classification}"
+    )
+
+
+def test_disabled_db_device_spoofed():
+    """A device with device_trusted=False and not in static list → spoofing."""
+    reading = _make_reading(device_id="DISABLED-DB-DEVICE")
+    validation = validate_reading(reading)
+    decision = classify_event(reading, validation, device_trusted=False)
+    assert decision.classification == DecisionClass.SPOOFING, (
+        f"Disabled device should be SPOOFING, got {decision.classification}"
+    )
+
+
+def test_static_list_device_always_trusted():
+    """Devices in REGISTERED_DEVICES are trusted regardless of device_trusted."""
+    reading = _make_reading(device_id="DEV-001-TEMP")
+    validation = validate_reading(reading)
+    decision = classify_event(reading, validation, device_trusted=False)
+    assert decision.classification == DecisionClass.NORMAL
+
+
+def test_trusted_device_with_impossible_values_still_spoofed():
+    """Even a trusted device sending physically impossible values is spoofed."""
+    reading = _make_reading(
+        device_id="TRUSTED-BAD-DATA", humidity=500.0
+    )
+    validation = validate_reading(reading)
+    decision = classify_event(reading, validation, device_trusted=True)
+    assert decision.classification == DecisionClass.SPOOFING

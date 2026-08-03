@@ -139,13 +139,24 @@ def detect_sensor_fault(
 # Spoofing / unauthorised-device detection
 # ---------------------------------------------------------------------------
 def detect_spoofing(
-    reading: SensorReading, validation: ValidationResult
+    reading: SensorReading,
+    validation: ValidationResult,
+    device_trusted: bool = False,
 ) -> Tuple[bool, List[str]]:
-    """Return (is_spoofed, evidence_list)."""
+    """Return (is_spoofed, evidence_list).
+
+    A device is considered spoofed if:
+    - It is NOT in the static REGISTERED_DEVICES list AND not trusted
+      in the database, OR
+    - It sends physically impossible sensor values.
+
+    If device_trusted is True (registered and enabled in trusted_devices
+    table or in REGISTERED_DEVICES), the unknown-device check is skipped.
+    """
     evidence: List[str] = []
     score = 0
 
-    if reading.device_id not in REGISTERED_DEVICES:
+    if not device_trusted and reading.device_id not in REGISTERED_DEVICES:
         evidence.append(f"Unknown device ID: {reading.device_id}")
         score += 5
     if reading.humidity > 100:
@@ -204,6 +215,16 @@ async def _is_device_trusted(device_id: str) -> bool:
         return False
 
 
+def is_device_trusted_sync(device_id: str) -> bool:
+    """Synchronous trust check — only checks the static list.
+
+    For full database-backed trust checking, use the async
+    ``_is_device_trusted()`` or resolve trust in the API layer before
+    calling ``classify_event()``.
+    """
+    return device_id in REGISTERED_DEVICES
+
+
 # ---------------------------------------------------------------------------
 # Main classifier
 # Priority: Offline > Spoofing > (Fault XOR Emergency) > Fault+Emergency
@@ -214,12 +235,22 @@ def classify_event(
     reading: SensorReading,
     validation: ValidationResult,
     history: List[SensorReading] = None,
+    device_trusted: bool = False,
 ) -> SafetyDecision:
     """Deterministic safety classifier.
 
     The decision tree checks conditions in strict priority order.  The
     deterministic rules are the ONLY safety decision-makers — the LLM is
     used only for post-hoc explanation.
+
+    Args:
+        reading: The sensor reading to classify.
+        validation: Result of data validation.
+        history: Optional previous readings for duplicate detection.
+        device_trusted: Whether the device is trusted (registered and
+            enabled in the database or in the static REGISTERED_DEVICES
+            list).  If False, an unknown device will be flagged as
+            spoofing.
     """
     evidence: List[str] = []
 
@@ -235,7 +266,9 @@ def classify_event(
         )
 
     # --- SPOOFING ---
-    is_spoofed, spoof_evidence = detect_spoofing(reading, validation)
+    is_spoofed, spoof_evidence = detect_spoofing(
+        reading, validation, device_trusted=device_trusted
+    )
     if is_spoofed:
         return SafetyDecision(
             classification=DecisionClass.SPOOFING,
