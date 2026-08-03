@@ -10,19 +10,48 @@ from typing import Optional, List
 
 from iot_trustbench.core.sensor_simulator import generate_reading, SensorReading
 from iot_trustbench.core.data_validator import validate_reading
-from iot_trustbench.core.safety_engine import classify_event, SafetyDecision, DecisionClass
+from iot_trustbench.core.safety_engine import (
+    classify_event,
+    SafetyDecision,
+    DecisionClass,
+)
 from iot_trustbench.core.llm_explainer import explain_decision
 from iot_trustbench.database.db import (
-    init_db, insert_scenario, insert_telemetry, insert_decision,
-    insert_llm_explanation, insert_test_result, get_all_scenarios,
-    get_recent_decisions, get_test_results, get_evaluation_metrics,
-    insert_hardware_reading, upsert_hardware_device, get_hardware_readings,
-    get_hardware_devices, get_latest_hardware_reading
+    init_db,
+    insert_scenario,
+    insert_telemetry,
+    insert_decision,
+    insert_llm_explanation,
+    insert_test_result,
+    get_all_scenarios,
+    get_recent_decisions,
+    get_test_results,
+    get_evaluation_metrics,
+    insert_hardware_reading,
+    upsert_hardware_device,
+    get_hardware_readings,
+    get_hardware_devices,
+    get_latest_hardware_reading,
+    insert_trusted_device,
+    get_trusted_devices,
+    get_trusted_device,
+    set_trusted_device_enabled,
+    delete_trusted_device,
 )
+
+ALL_SCENARIO_TYPES = [
+    "normal",
+    "emergency",
+    "sensor_fault",
+    "spoofing",
+    "offline",
+    "uncertain",
+]
 
 app = FastAPI(title="IoT-TrustBench", version="1.0.0")
 
 from pathlib import Path
+
 PKG_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = str(PKG_DIR / "static")
 TEMPLATES_DIR = str(PKG_DIR / "templates")
@@ -30,6 +59,10 @@ TEMPLATES_DIR = str(PKG_DIR / "templates")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+
+# ======================================================================
+# Request models
+# ======================================================================
 
 class ScenarioRequest(BaseModel):
     scenario_type: str
@@ -53,10 +86,29 @@ class HardwareReading(BaseModel):
     power_status: str = "on"
 
 
+class TrustedDeviceRequest(BaseModel):
+    device_id: str
+    device_name: str = ""
+    device_type: str = "esp32"
+    token_hash: Optional[str] = None
+
+
+class TrustedDeviceEnableRequest(BaseModel):
+    enabled: bool
+
+
+# ======================================================================
+# Startup
+# ======================================================================
+
 @app.on_event("startup")
-async def startup():
+async def startup() -> None:
     await init_db()
 
+
+# ======================================================================
+# Page routes
+# ======================================================================
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -88,8 +140,13 @@ async def hardware_page(request: Request):
     return templates.TemplateResponse(request, "hardware.html")
 
 
+# ======================================================================
+# Simulation API
+# ======================================================================
+
 @app.post("/api/simulate")
 async def api_simulate(req: ScenarioRequest):
+    """Generate a simulated reading, classify it, and store results."""
     start = time.time()
     reading = generate_reading(req.scenario_type, req.device_id)
     validation = validate_reading(reading)
@@ -99,12 +156,18 @@ async def api_simulate(req: ScenarioRequest):
         name=req.scenario_name or f"Live {req.scenario_type}",
         scenario_type=req.scenario_type,
         expected_class=req.scenario_type,
-        description=f"Live simulation of {req.scenario_type}"
+        description=f"Live simulation of {req.scenario_type}",
     )
-    telemetry_id = await insert_telemetry(scenario_id, reading.model_dump(mode="json"))
-    decision_id = await insert_decision(scenario_id, telemetry_id, decision.model_dump())
+    telemetry_id = await insert_telemetry(
+        scenario_id, reading.model_dump(mode="json")
+    )
+    decision_id = await insert_decision(
+        scenario_id, telemetry_id, decision.model_dump()
+    )
 
-    llm_result = await explain_decision(reading.model_dump(mode="json"), decision)
+    llm_result = await explain_decision(
+        reading.model_dump(mode="json"), decision
+    )
     await insert_llm_explanation(decision_id, llm_result)
 
     elapsed_ms = (time.time() - start) * 1000
@@ -118,9 +181,14 @@ async def api_simulate(req: ScenarioRequest):
         },
         "decision": decision.model_dump(),
         "llm_explanation": llm_result["explanation"],
+        "llm_backend": llm_result["backend"],
         "execution_time_ms": round(elapsed_ms, 2),
     }
 
+
+# ======================================================================
+# Scenario / Decision queries
+# ======================================================================
 
 @app.get("/api/scenarios")
 async def api_list_scenarios():
@@ -134,19 +202,26 @@ async def api_recent_decisions(limit: int = 50):
     return {"decisions": decisions}
 
 
+# ======================================================================
+# Evaluation
+# ======================================================================
+
 @app.get("/api/evaluation")
 async def api_evaluation():
     metrics = await get_evaluation_metrics()
     return metrics
 
 
+# ======================================================================
+# Batch testing — all 6 classes
+# ======================================================================
+
 @app.post("/api/batch-test")
 async def api_batch_test(req: BatchTestRequest):
-    scenario_types = req.scenario_types or [
-        "normal", "emergency", "sensor_fault", "spoofing", "uncertain"
-    ]
+    """Run batch tests for all six scenario types by default."""
+    scenario_types = req.scenario_types or ALL_SCENARIO_TYPES
     count = req.count_per_type
-    results = []
+    results: list = []
     total_start = time.time()
 
     for scenario_type in scenario_types:
@@ -159,19 +234,27 @@ async def api_batch_test(req: BatchTestRequest):
 
             is_correct = decision.classification.value == scenario_type
             scenario_id = await insert_scenario(
-                name=f"Test {scenario_type} #{i+1}",
+                name=f"Test {scenario_type} #{i + 1}",
                 scenario_type=scenario_type,
                 expected_class=scenario_type,
-                description=f"Batch test scenario"
+                description="Batch test scenario",
             )
-            await insert_test_result(scenario_id, scenario_type, decision.classification.value, is_correct, elapsed_ms)
-            results.append({
-                "scenario_type": scenario_type,
-                "expected": scenario_type,
-                "predicted": decision.classification.value,
-                "is_correct": is_correct,
-                "execution_time_ms": round(elapsed_ms, 2),
-            })
+            await insert_test_result(
+                scenario_id,
+                scenario_type,
+                decision.classification.value,
+                is_correct,
+                elapsed_ms,
+            )
+            results.append(
+                {
+                    "scenario_type": scenario_type,
+                    "expected": scenario_type,
+                    "predicted": decision.classification.value,
+                    "is_correct": is_correct,
+                    "execution_time_ms": round(elapsed_ms, 2),
+                }
+            )
 
     total_ms = (time.time() - total_start) * 1000
     correct = sum(1 for r in results if r["is_correct"])
@@ -183,7 +266,7 @@ async def api_batch_test(req: BatchTestRequest):
         "accuracy": round(correct / len(results), 3) if results else 0,
         "total_time_ms": round(total_ms, 2),
         "metrics": metrics,
-        "results": results[:100],
+        "results": results[:200],
     }
 
 
@@ -196,6 +279,7 @@ async def api_test_results():
 @app.post("/api/reset-history")
 async def api_reset_history():
     import aiosqlite
+
     db = await aiosqlite.connect("iot_trustbench.db")
     await db.executescript("""
         DELETE FROM llm_explanations;
@@ -209,8 +293,17 @@ async def api_reset_history():
     return {"status": "History cleared"}
 
 
+# ======================================================================
+# Hardware API
+# ======================================================================
+
 @app.post("/api/hardware")
 async def api_hardware_reading(reading: HardwareReading):
+    """Receive data from an ESP32 sensor node.
+
+    Unknown devices are NOT automatically trusted — they will be
+    classified as spoofing.
+    """
     start = time.time()
     sensor_reading = SensorReading(
         temperature=reading.temperature,
@@ -226,11 +319,12 @@ async def api_hardware_reading(reading: HardwareReading):
     validation = validate_reading(sensor_reading)
     decision = classify_event(sensor_reading, validation)
 
+    # Do NOT auto-trust unknown devices — only upsert hardware_devices
     await upsert_hardware_device(reading.device_id)
     reading_id = await insert_hardware_reading(
         reading.device_id,
         reading.model_dump(),
-        decision.model_dump()
+        decision.model_dump(),
     )
 
     elapsed_ms = (time.time() - start) * 1000
@@ -248,6 +342,8 @@ async def api_hardware_reading(reading: HardwareReading):
 @app.get("/api/hardware/readings")
 async def api_hardware_readings(limit: int = 50, device_id: str = None):
     readings = await get_hardware_readings(limit)
+    if device_id:
+        readings = [r for r in readings if r["device_id"] == device_id]
     return {"readings": readings}
 
 
@@ -261,3 +357,62 @@ async def api_hardware_devices():
 async def api_hardware_latest(device_id: str = None):
     reading = await get_latest_hardware_reading(device_id)
     return {"reading": reading}
+
+
+# ======================================================================
+# Trusted-device management API
+# ======================================================================
+
+@app.post("/api/trusted-devices")
+async def api_register_trusted_device(req: TrustedDeviceRequest):
+    """Register a new trusted device."""
+    existing = await get_trusted_device(req.device_id)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Device '{req.device_id}' is already registered",
+        )
+    device_id = await insert_trusted_device(
+        device_id=req.device_id,
+        device_name=req.device_name,
+        device_type=req.device_type,
+        token_hash=req.token_hash,
+    )
+    return {"status": "registered", "device_id": req.device_id}
+
+
+@app.get("/api/trusted-devices")
+async def api_list_trusted_devices():
+    """List all trusted devices."""
+    devices = await get_trusted_devices()
+    return {"devices": devices}
+
+
+@app.get("/api/trusted-devices/{device_id}")
+async def api_get_trusted_device(device_id: str):
+    """Get a single trusted device."""
+    device = await get_trusted_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return {"device": device}
+
+
+@app.put("/api/trusted-devices/{device_id}/enable")
+async def api_enable_trusted_device(
+    device_id: str, req: TrustedDeviceEnableRequest
+):
+    """Enable or disable a trusted device."""
+    updated = await set_trusted_device_enabled(device_id, req.enabled)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Device not found")
+    action = "enabled" if req.enabled else "disabled"
+    return {"status": action, "device_id": device_id}
+
+
+@app.delete("/api/trusted-devices/{device_id}")
+async def api_delete_trusted_device(device_id: str):
+    """Remove a trusted device."""
+    deleted = await delete_trusted_device(device_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return {"status": "deleted", "device_id": device_id}

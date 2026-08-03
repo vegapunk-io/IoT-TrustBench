@@ -67,6 +67,29 @@ async function loadMetrics() {
             </div>
         </div>
 
+        <div class="grid-4" style="margin-bottom:32px;">
+            <div class="stat-card info">
+                <div class="stat-icon"><i class="bi bi-exclamation-triangle"></i></div>
+                <div class="stat-value">${data.missed_emergencies || 0}</div>
+                <div class="stat-label">Missed Emergencies</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-icon"><i class="bi bi-person-check"></i></div>
+                <div class="stat-value">${((data.correct_uncertain_rate || 0) * 100).toFixed(1)}%</div>
+                <div class="stat-label">Correct Uncertain Rate</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-icon"><i class="bi bi-shield-x"></i></div>
+                <div class="stat-value">${data.spoof_detected_count || 0}</div>
+                <div class="stat-label">Spoof Detected</div>
+            </div>
+            <div class="stat-card primary">
+                <div class="stat-icon"><i class="bi bi-grid-3x3"></i></div>
+                <div class="stat-value">${classes.length}</div>
+                <div class="stat-label">Classes Evaluated</div>
+            </div>
+        </div>
+
         <div class="grid-2" style="margin-bottom:32px;">
             <div class="card">
                 <div class="card-header"><h3><i class="bi bi-bar-chart" style="margin-right:8px;"></i>Precision & Recall</h3></div>
@@ -111,14 +134,37 @@ async function loadMetrics() {
             </tr>`;
         });
 
-        html += '</tbody></table></div></div>
+        html += '</tbody></table></div></div>';
+
+        // Confusion Matrix
+        if (data.confusion_matrix && Object.keys(data.confusion_matrix).length > 0) {
+            const allClasses = ['normal', 'emergency', 'sensor_fault', 'spoofing', 'offline', 'uncertain'];
+            html += `<div class="card" style="margin-bottom:32px;">
+                <div class="card-header"><h3><i class="bi bi-grid-3x3" style="margin-right:8px;"></i>Confusion Matrix</h3></div>
+                <div class="card-body" style="padding:0;">
+                    <div class="table-wrapper"><table class="table table-bordered" style="margin:0;"><thead><tr><th style="background:var(--text-primary);color:#fff;">Expected \\ Predicted</th>`;
+            allClasses.forEach(c => {
+                html += `<th style="background:var(--text-primary);color:#fff;">${c}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            allClasses.forEach(exp => {
+                html += `<tr><td style="font-weight:600;background:var(--data-point-bg);">${exp}</td>`;
+                allClasses.forEach(pred => {
+                    const count = (data.confusion_matrix[exp] && data.confusion_matrix[exp][pred]) || 0;
+                    const bg = exp === pred ? 'background:rgba(16,185,129,0.15);font-weight:600;' : (count > 0 && exp === 'emergency' && pred === 'normal' ? 'background:rgba(239,68,68,0.2);' : '');
+                    html += `<td style="${bg}">${count}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table></div></div></div>';
+        }
 
         html += `<div class="card">
             <div class="card-header"><h3><i class="bi bi-clipboard-data" style="margin-right:8px;"></i>Summary</h3></div>
             <div class="card-body">
                 <div class="grid-summary-3">
                     <div style="padding:20px;background:var(--data-point-bg);border-radius:10px;text-align:center;">
-                        <div style="font-size:2.5rem;font-weight:800;color:var(--success);">${data.correct}</div>
+                        <div style="font-size:2.5rem;font-weight:800;color:var(--success);">${data.correct || 0}</div>
                         <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Correct</div>
                     </div>
                     <div style="padding:20px;background:var(--data-point-bg);border-radius:10px;text-align:center;">
@@ -126,8 +172,8 @@ async function loadMetrics() {
                         <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Dangerous Errors</div>
                     </div>
                     <div style="padding:20px;background:var(--data-point-bg);border-radius:10px;text-align:center;">
-                        <div style="font-size:2.5rem;font-weight:800;color:var(--success);">0</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Emergency-to-Normal</div>
+                        <div style="font-size:2.5rem;font-weight:800;color:var(--warning);">${data.missed_emergencies || 0}</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Missed Emergencies</div>
                     </div>
                 </div>
             </div>
@@ -220,7 +266,7 @@ async function loadMetrics() {
             }
         });
     } catch (err) {
-        document.getElementById('metricsContent').innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+        document.getElementById('metricsContent').innerHTML = '<div class="alert alert-danger">' + err.message + '</div>';
     }
 }
 
