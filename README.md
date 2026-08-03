@@ -94,28 +94,36 @@ Full wiring guide: `hardware/WIRING_GUIDE.md`
 
 ### Trusted Device Registration
 
-Unknown hardware devices are **not** automatically trusted. They will be classified as spoofing. To register a device:
+Unknown hardware devices are **not** automatically trusted. They will be classified as spoofing. To register a device, you need the `X-Admin-Key` header (if `ADMIN_API_KEY` is set):
 
 ```bash
-# Register a device
+# Register a device (requires admin key if ADMIN_API_KEY is set)
 curl -X POST http://localhost:8000/api/trusted-devices \
   -H "Content-Type: application/json" \
+  -H "X-Admin-Key: your_admin_key" \
   -d '{"device_id": "DEV-001-TEMP", "device_name": "Living Room Sensor"}'
 
-# List trusted devices
+# List trusted devices (no auth required)
 curl http://localhost:8000/api/trusted-devices
 
-# Disable a device
+# Disable a device (requires admin key)
 curl -X PUT http://localhost:8000/api/trusted-devices/DEV-001-TEMP/enable \
-  -H "Content-Type: application/json" -d '{"enabled": false}'
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: your_admin_key" \
+  -d '{"enabled": false}'
 
-# Re-enable a device
+# Re-enable a device (requires admin key)
 curl -X PUT http://localhost:8000/api/trusted-devices/DEV-001-TEMP/enable \
-  -H "Content-Type: application/json" -d '{"enabled": true}'
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: your_admin_key" \
+  -d '{"enabled": true}'
 
-# Remove a device
-curl -X DELETE http://localhost:8000/api/trusted-devices/DEV-001-TEMP
+# Remove a device (requires admin key)
+curl -X DELETE http://localhost:8000/api/trusted-devices/DEV-001-TEMP \
+  -H "X-Admin-Key: your_admin_key"
 ```
+
+If `ADMIN_API_KEY` is not set, the system runs in development mode and all trusted-device endpoints are accessible without a key.
 
 ## Project Structure
 
@@ -143,9 +151,10 @@ iot_trustbench/
 │   └── test_scenarios.json   # 100 labelled scenarios
 └── tests/
     ├── test_core.py          # Core unit tests (10 tests)
-    ├── test_edge_cases.py    # Edge-case boundary tests (30 tests)
+    ├── test_edge_cases.py    # Edge-case boundary tests (34 tests)
     ├── test_batch.py         # Batch evaluation (all 6 classes)
-    └── test_api_smoke.py     # API endpoint smoke tests (10 tests)
+    ├── test_api_smoke.py     # API endpoint smoke tests (13 tests)
+    └── conftest.py           # Shared pytest fixtures
 ```
 
 ## API Endpoints
@@ -171,17 +180,17 @@ iot_trustbench/
 ## Testing
 
 ```bash
-# Unit tests (10 tests)
+# All tests (57 tests, uses temporary test database)
+python -m pytest iot_trustbench/tests/ -v
+
+# Unit tests only (10 tests)
 python -m pytest iot_trustbench/tests/test_core.py -v
 
-# Edge-case tests (30 tests)
+# Edge-case tests (34 tests)
 python -m pytest iot_trustbench/tests/test_edge_cases.py -v
 
-# API smoke tests (10 tests)
+# API smoke tests (13 tests)
 python -m pytest iot_trustbench/tests/test_api_smoke.py -v
-
-# All tests (50 tests)
-python -m pytest iot_trustbench/tests/ -v
 
 # Batch evaluation (all 6 classes, 120 samples)
 python iot_trustbench/tests/test_batch.py
@@ -222,6 +231,23 @@ set LLM_MODEL=gpt-4o-mini
 ```
 
 Supported backends: `local`, `gemini`, `openai`, `none`
+
+## Admin API Key (Optional)
+
+Trusted-device management endpoints (POST, PUT, DELETE) can be protected with an admin key:
+
+```bash
+# Set an admin key in production
+set ADMIN_API_KEY=your_secret_admin_key
+
+# Then use it in requests
+curl -X POST http://localhost:8000/api/trusted-devices \
+  -H "X-Admin-Key: your_secret_admin_key" \
+  -H "Content-Type: application/json" \
+  -d '{"device_id": "DEV-001-TEMP", "device_name": "Living Room"}'
+```
+
+If `ADMIN_API_KEY` is not set, the system runs in development mode with no authentication required on trusted-device endpoints.
 
 The LLM prompt explicitly instructs the model to:
 - NOT change the classification
