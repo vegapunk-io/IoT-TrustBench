@@ -22,8 +22,8 @@
     </div>
     <div class="stat-card success">
         <div class="stat-icon"><i class="bi bi-shield-check"></i></div>
-        <div class="stat-value">100%</div>
-        <div class="stat-label">Accuracy</div>
+        <div class="stat-value" id="accuracyStat">--</div>
+        <div class="stat-label">Test Accuracy</div>
     </div>
     <div class="stat-card warning">
         <div class="stat-icon"><i class="bi bi-exclamation-triangle"></i></div>
@@ -178,4 +178,21 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDashboardStats() {
+    try {
+        const resp = await fetch('/api/evaluation');
+        const data = await resp.json();
+        if (data.total > 0) {
+            document.getElementById('accuracyStat').textContent = (data.accuracy * 100).toFixed(1) + '%';
+        } else {
+            document.getElementById('accuracyStat').textContent = 'No tests';
+        }
+    } catch (e) {}
+}
+loadDashboardStats();
+</script>
 {% endblock %}
