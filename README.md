@@ -4,6 +4,14 @@ A software-based framework to evaluate safe IoT classification using simulated s
 
 > **Disclaimer:** This is a simulation and research project. It is **not** a real-world safety-control system and must not be used to control physical devices or make autonomous safety decisions.
 
+## 🌐 Live Demo
+
+The project is deployed and publicly accessible on Render:
+
+**▶️ https://iot-trustbench.onrender.com/**
+
+The live deployment runs in local mode (no LLM API key required) with a fresh SQLite database — no physical hardware needed. Everything works in the browser: run simulations, batch-test all 100+ scenarios, and view evaluation metrics. Swagger API docs are available at `https://iot-trustbench.onrender.com/docs`.
+
 ## Architecture
 
 ```mermaid
@@ -47,6 +55,24 @@ python run.py
 # Open browser
 http://localhost:8000
 ```
+
+## Deploy on Render
+
+The app is a standard FastAPI web service and deploys to Render in minutes:
+
+1. Push this repository to GitHub
+2. In the [Render dashboard](https://dashboard.render.com/), create a **New Web Service** and connect the repo
+3. Use these settings (no config file required):
+
+   | Setting | Value |
+   |---------|-------|
+   | **Build Command** | `pip install -r requirements.txt` |
+   | **Start Command** | `uvicorn iot_trustbench.api.app:app --host 0.0.0.0 --port $PORT` |
+   | **Instance Type** | Free (or any paid plan) |
+
+4. Optional environment variables (see `.env.example`): `LLM_BACKEND`, `LLM_API_KEY`, `ADMIN_API_KEY`, `IOT_DB_PATH`
+
+> **Note:** Render's free tier uses an ephemeral filesystem — the SQLite database resets whenever the service restarts. For persistent data, attach a persistent disk at `/var/data` and set `IOT_DB_PATH=/var/data/iot_trustbench.db`.
 
 ## Decision Classes
 
