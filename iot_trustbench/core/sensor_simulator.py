@@ -128,7 +128,7 @@ def generate_sensor_fault(device_id: Optional[str] = None) -> SensorReading:
     )
 
 
-def generate_spoofed_reading() -> SensorReading:
+def generate_spoofed_reading(device_id: Optional[str] = None) -> SensorReading:
     spoof_type = random.choice(["invalid_humidity", "unknown_device", "impossible_values"])
     if spoof_type == "invalid_humidity":
         humidity = random.uniform(101.0, 200.0)
@@ -194,6 +194,4 @@ GENERATORS = {
 
 def generate_reading(scenario_type: str, device_id: Optional[str] = None) -> SensorReading:
     generator = GENERATORS.get(scenario_type, generate_normal_reading)
-    if scenario_type == "spoofing":
-        return generator()
     return generator(device_id)

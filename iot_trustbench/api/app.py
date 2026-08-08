@@ -1,6 +1,8 @@
 import os
 import time
 import json
+import secrets
+from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException, Depends, Header
 from fastapi.staticfiles import StaticFiles
@@ -52,7 +54,14 @@ ALL_SCENARIO_TYPES = [
 
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 
-app = FastAPI(title="IoT-TrustBench", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize the database on startup and clean up on shutdown."""
+    await init_db()
+    yield
+
+
+app = FastAPI(title="IoT-TrustBench", version="1.1.0", lifespan=lifespan)
 
 from pathlib import Path
 
@@ -114,20 +123,11 @@ async def verify_admin_key(x_admin_key: Optional[str] = Header(None)) -> None:
     if not ADMIN_API_KEY:
         # Development mode — no key configured, allow all
         return
-    if x_admin_key != ADMIN_API_KEY:
+    if not secrets.compare_digest(x_admin_key or "", ADMIN_API_KEY):
         raise HTTPException(
             status_code=403,
             detail="Invalid or missing X-Admin-Key header",
         )
-
-
-# ======================================================================
-# Startup
-# ======================================================================
-
-@app.on_event("startup")
-async def startup() -> None:
-    await init_db()
 
 
 # ======================================================================
@@ -171,6 +171,15 @@ async def hardware_page(request: Request):
 @app.post("/api/simulate")
 async def api_simulate(req: ScenarioRequest):
     """Generate a simulated reading, classify it, and store results."""
+    if req.scenario_type not in ALL_SCENARIO_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Invalid scenario_type '{req.scenario_type}'. "
+                f"Must be one of: {', '.join(ALL_SCENARIO_TYPES)}"
+            ),
+        )
+
     start = time.time()
     reading = generate_reading(req.scenario_type, req.device_id)
     validation = validate_reading(reading)
@@ -302,9 +311,9 @@ async def api_test_results():
 
 @app.post("/api/reset-history")
 async def api_reset_history():
-    import aiosqlite
+    from iot_trustbench.database.db import get_db
 
-    db = await aiosqlite.connect("iot_trustbench.db")
+    db = await get_db()
     await db.executescript("""
         DELETE FROM llm_explanations;
         DELETE FROM test_results;

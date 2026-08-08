@@ -234,7 +234,7 @@ def is_device_trusted_sync(device_id: str) -> bool:
 def classify_event(
     reading: SensorReading,
     validation: ValidationResult,
-    history: List[SensorReading] = None,
+    history: Optional[List[SensorReading]] = None,
     device_trusted: bool = False,
 ) -> SafetyDecision:
     """Deterministic safety classifier.

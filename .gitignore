@@ -6,6 +6,13 @@ __pycache__/
 .Python
 venv/
 env/
+.venv/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
 
 # Database
 *.db

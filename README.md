@@ -15,7 +15,7 @@
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
 ![Chart.js](https://img.shields.io/badge/Chart.js-FF6384?logo=chartdotjs&logoColor=white)
 ![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20OpenAI%20%7C%20Local-8B5CF6)
-![Tests](https://img.shields.io/badge/pytest-57%20tests%20%E2%9C%93-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/pytest-71%20tests%20%E2%9C%93-brightgreen?logo=pytest&logoColor=white)
 ![Hardware](https://img.shields.io/badge/ESP32%20%2B%20Sensors-Optional-FF6600?logo=espressif&logoColor=white)
 
 </div>
@@ -137,6 +137,7 @@ cd IoT-TrustBench
 
 # 2. Install dependencies
 pip install -r requirements.txt
+# (or, for an editable/CLI install: pip install -e .)
 
 # 3. (Optional) Configure LLM
 cp .env.example .env
@@ -144,6 +145,8 @@ cp .env.example .env
 
 # 4. Start server
 python run.py
+# or, with the installed CLI:
+# iot-trustbench serve --port 8000
 
 # 5. Open browser
 http://localhost:8000
@@ -234,7 +237,7 @@ Full wiring guide: [`hardware/WIRING_GUIDE.md`](hardware/WIRING_GUIDE.md)
 ## 🧪 Testing
 
 ```bash
-# All tests (57 tests, uses temporary test database)
+# All tests (71 tests, uses temporary test database)
 python -m pytest iot_trustbench/tests/ -v
 
 # Unit tests only (10 tests)
@@ -248,6 +251,12 @@ python -m pytest iot_trustbench/tests/test_api_smoke.py -v
 
 # Batch evaluation (all 6 classes, 120 samples)
 python iot_trustbench/tests/test_batch.py
+
+# Batch evaluation from the terminal (CLI, 20 runs per type)
+python -m iot_trustbench batch --count 20
+
+# Batch evaluation of a single scenario type
+python -m iot_trustbench batch emergency --count 50
 ```
 
 ---

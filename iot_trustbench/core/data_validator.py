@@ -248,17 +248,21 @@ def validate_consistency(
     reading: SensorReading, result: ValidationResult
 ) -> None:
     """Flag patterns that are unlikely in real scenarios."""
+    consistency_warning_added = False
     if reading.smoke > 50 and reading.gas < 5:
         result.add_warning("High smoke with low gas may indicate sensor issue")
+        consistency_warning_added = True
     if reading.temperature > 60 and reading.humidity > 70:
         result.add_warning(
             "High temperature with high humidity is unusual"
         )
+        consistency_warning_added = True
     if reading.temperature > 45 and reading.smoke < 3 and reading.gas < 5:
         result.add_warning(
             "High temperature with very low smoke/gas - likely sensor fault"
         )
-    if not any("consistency" in w.lower() for w in result.warnings):
+        consistency_warning_added = True
+    if not consistency_warning_added:
         result.add_pass("Sensor readings are internally consistent")
 
 
