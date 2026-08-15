@@ -4,15 +4,21 @@ Provides the web dashboard, REST API, and integration points for
 the IoT safety classification system.
 """
 
+import os
+import secrets
 import time
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from iot_trustbench.core.sensor_simulator import SensorReading, generate_reading
 from iot_trustbench.core.data_validator import validate_reading
@@ -43,7 +49,24 @@ from iot_trustbench.database.db import (
     remove_trusted_device,
 )
 
-app = FastAPI(title="IoT-TrustBench", version="1.1.0")
+app = FastAPI(title="IoT-TrustBench", version="1.2.0")
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
+    status_code=429,
+    content={"detail": "Rate limit exceeded. Please try again later."}
+))
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 from pathlib import Path
 
@@ -91,6 +114,24 @@ class TrustedDeviceRequest(BaseModel):
 ALL_SCENARIO_TYPES = [
     "normal", "emergency", "sensor_fault", "spoofing", "offline", "uncertain"
 ]
+
+ADMIN_KEY = os.getenv("ADMIN_KEY", "")
+
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+
+async def verify_admin_key(request: Request):
+    """Verify admin API key for protected endpoints."""
+    if not ADMIN_KEY:
+        return
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+    token = auth_header[7:]
+    if not secrets.compare_digest(token, ADMIN_KEY):
+        raise HTTPException(status_code=403, detail="Invalid admin key")
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +187,8 @@ async def devices_page(request: Request):
 # ---------------------------------------------------------------------------
 
 @app.post("/api/simulate")
-async def api_simulate(req: ScenarioRequest):
+@limiter.limit("30/minute")
+async def api_simulate(request: Request, req: ScenarioRequest):
     """Run a simulated test for a single scenario type."""
     start = time.time()
     reading = generate_reading(req.scenario_type, req.device_id)
@@ -205,7 +247,8 @@ async def api_evaluation():
 
 
 @app.post("/api/batch-test")
-async def api_batch_test(req: BatchTestRequest):
+@limiter.limit("10/minute")
+async def api_batch_test(request: Request, req: BatchTestRequest):
     """Run batch evaluation across all six scenario types."""
     scenario_types = req.scenario_types or ALL_SCENARIO_TYPES
     count = req.count_per_type
@@ -265,9 +308,10 @@ async def api_test_results():
 
 
 @app.post("/api/reset-history")
-async def api_reset_history():
+async def api_reset_history(request: Request, _=Depends(verify_admin_key)):
+    from iot_trustbench.database.db import DB_PATH
     import aiosqlite
-    db = await aiosqlite.connect("iot_trustbench.db")
+    db = await aiosqlite.connect(DB_PATH)
     await db.executescript("""
         DELETE FROM llm_explanations;
         DELETE FROM test_results;
@@ -285,7 +329,8 @@ async def api_reset_history():
 # ---------------------------------------------------------------------------
 
 @app.post("/api/hardware")
-async def api_hardware_reading(reading: HardwareReading):
+@limiter.limit("60/minute")
+async def api_hardware_reading(request: Request, reading: HardwareReading):
     """Receive data from an ESP32 hardware node.
 
     Unknown devices are NOT automatically trusted.
@@ -351,7 +396,7 @@ async def api_hardware_latest(device_id: str = None):
 # ---------------------------------------------------------------------------
 
 @app.post("/api/trusted-devices")
-async def api_register_trusted_device(req: TrustedDeviceRequest):
+async def api_register_trusted_device(request: Request, req: TrustedDeviceRequest, _=Depends(verify_admin_key)):
     """Register a new trusted device.
 
     Only pre-registered devices will be classified as non-spoofing.
@@ -381,7 +426,7 @@ async def api_list_trusted_devices():
 
 
 @app.post("/api/trusted-devices/{device_id}/enable")
-async def api_enable_trusted_device(device_id: str):
+async def api_enable_trusted_device(request: Request, device_id: str, _=Depends(verify_admin_key)):
     """Re-enable a trusted device."""
     changed = await enable_trusted_device(device_id)
     if not changed:
@@ -390,7 +435,7 @@ async def api_enable_trusted_device(device_id: str):
 
 
 @app.post("/api/trusted-devices/{device_id}/disable")
-async def api_disable_trusted_device(device_id: str):
+async def api_disable_trusted_device(request: Request, device_id: str, _=Depends(verify_admin_key)):
     """Disable a trusted device.
 
     A disabled device will fail validation and be flagged in classification.
@@ -402,7 +447,7 @@ async def api_disable_trusted_device(device_id: str):
 
 
 @app.delete("/api/trusted-devices/{device_id}")
-async def api_remove_trusted_device(device_id: str):
+async def api_remove_trusted_device(request: Request, device_id: str, _=Depends(verify_admin_key)):
     """Remove a device from the trusted list."""
     changed = await remove_trusted_device(device_id)
     if not changed:
